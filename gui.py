@@ -178,7 +178,6 @@ class MainWindow:
         self._create_stats_panel(right_panel)
         self._create_ad_sync_toolbar(right_panel)
         self._create_user_panel(right_panel)
-        self._create_progress_bar()
     
     def _create_stats_panel(self, parent):
         stats_frame = ttk.LabelFrame(parent, text="同步统计", style='Card.TFrame')
@@ -377,20 +376,6 @@ class MainWindow:
         for child in children:
             self._add_dept_node(child, dept_dict, node)
     
-    def _create_progress_bar(self):
-        progress_frame = ttk.LabelFrame(self.root, text="执行进度", style='Card.TFrame')
-        progress_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
-        
-        progress_inner = ttk.Frame(progress_frame)
-        progress_inner.pack(fill=tk.X, padx=12, pady=6)
-        
-        self.progress_label = ttk.Label(progress_inner, text="就绪", style='Status.TLabel')
-        self.progress_label.pack(side=tk.LEFT, padx=4)
-        
-        self.progress_bar = ttk.Progressbar(progress_inner, orient="horizontal", length=400, mode="determinate")
-        self.progress_bar.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=8)
-        self.progress_bar['value'] = 0
-    
     def _create_user_panel(self, parent):
         user_frame = ttk.LabelFrame(parent, text="用户列表", style='Card.TFrame')
         user_frame.grid(row=2, column=0, sticky=tk.W+tk.E+tk.N+tk.S, padx=8, pady=(0, 8))
@@ -471,7 +456,6 @@ class MainWindow:
     
     def _cancel_sync(self):
         self.sync_cancel_event.set()
-        self.progress_label.config(text="正在取消同步...")
 
     def _enable_buttons_safe(self, enabled):
         self.root.after(0, lambda: self._set_sync_buttons_enabled(enabled))

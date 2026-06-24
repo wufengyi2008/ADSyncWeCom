@@ -4,38 +4,39 @@ import sqlite3
 import hashlib
 import threading
 import time
+from typing import Optional, List, Tuple, Dict, Any
 
-def get_app_dir():
+def get_app_dir() -> str:
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 class Database:
-    _instance = None
-    _conn = None
-    _lock = threading.Lock()
+    _instance: Optional['Database'] = None
+    _conn: Optional[sqlite3.Connection] = None
+    _lock: threading.Lock = threading.Lock()
     
-    DB_FILE = os.path.join(get_app_dir(), 'data', 'sync.db')
-    DB_KEY = hashlib.sha256(b'WeCom_AD_Sync_Secure_Key_2024').digest().hex()[:32]
+    DB_FILE: str = os.path.join(get_app_dir(), 'data', 'sync.db')
+    DB_KEY: str = hashlib.sha256(b'WeCom_AD_Sync_Secure_Key_2024').digest().hex()[:32]
     
-    def __new__(cls):
+    def __new__(cls) -> 'Database':
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super(Database, cls).__new__(cls)
         return cls._instance
     
-    def __init__(self):
+    def __init__(self) -> None:
         if self._conn is None:
             self._ensure_data_dir()
             self._connect()
     
-    def _ensure_data_dir(self):
+    def _ensure_data_dir(self) -> None:
         data_dir = os.path.dirname(self.DB_FILE)
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
     
-    def _connect(self):
+    def _connect(self) -> None:
         try:
             try:
                 from pysqlcipher3 import dbapi2 as sqlite
@@ -58,7 +59,7 @@ class Database:
         except Exception as e:
             raise Exception(f"数据库连接失败: {str(e)}")
     
-    def _init_tables(self):
+    def _init_tables(self) -> None:
         cursor = self._conn.cursor()
         
         cursor.execute('''
@@ -154,7 +155,7 @@ class Database:
         
         self._conn.commit()
     
-    def execute(self, sql, params=None, retries=3):
+    def execute(self, sql: str, params: Optional[Tuple[Any, ...]] = None, retries: int = 3) -> sqlite3.Cursor:
         with self._lock:
             for attempt in range(retries):
                 try:
@@ -171,7 +172,7 @@ class Database:
                         continue
                     raise
     
-    def fetch_one(self, sql, params=None, retries=3):
+    def fetch_one(self, sql: str, params: Optional[Tuple[Any, ...]] = None, retries: int = 3) -> Optional[sqlite3.Row]:
         with self._lock:
             for attempt in range(retries):
                 try:
@@ -187,7 +188,7 @@ class Database:
                         continue
                     raise
     
-    def fetch_all(self, sql, params=None, retries=3):
+    def fetch_all(self, sql: str, params: Optional[Tuple[Any, ...]] = None, retries: int = 3) -> List[sqlite3.Row]:
         with self._lock:
             for attempt in range(retries):
                 try:
@@ -203,7 +204,7 @@ class Database:
                         continue
                     raise
     
-    def executemany(self, sql, params_list, retries=3):
+    def executemany(self, sql: str, params_list: List[Tuple[Any, ...]], retries: int = 3) -> sqlite3.Cursor:
         with self._lock:
             for attempt in range(retries):
                 try:
@@ -217,8 +218,7 @@ class Database:
                         continue
                     raise
     
-    def log_operation(self, operation_type, target, detail):
-        # 确保所有参数都是字符串类型
+    def log_operation(self, operation_type: str, target: str, detail: str) -> None:
         operation_type = str(operation_type) if operation_type else ''
         target = str(target) if target else ''
         detail = str(detail) if detail else ''
@@ -228,11 +228,11 @@ class Database:
             (operation_type, target, detail, local_time)
         )
     
-    def close(self):
+    def close(self) -> None:
         with self._lock:
             if self._conn:
                 self._conn.close()
                 self._conn = None
-
-    def __del__(self):
+    
+    def __del__(self) -> None:
         self.close()

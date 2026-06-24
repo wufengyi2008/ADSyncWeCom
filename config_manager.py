@@ -1,16 +1,17 @@
+from typing import Optional, Dict, Any
 from database import Database
 
 class ConfigManager:
-    _instance = None
+    _instance: Optional['ConfigManager'] = None
     
-    def __new__(cls):
+    def __new__(cls) -> 'ConfigManager':
         if cls._instance is None:
             cls._instance = super(ConfigManager, cls).__new__(cls)
             cls._instance.db = Database()
             cls._instance._init_defaults()
         return cls._instance
     
-    def _init_defaults(self):
+    def _init_defaults(self) -> None:
         defaults = [
             ('wecom', 'corp_id', '', '企业微信CorpID'),
             ('wecom', 'corp_secret', '', '企业微信Secret'),
@@ -18,7 +19,7 @@ class ConfigManager:
             ('ad', 'domain', '', 'AD域名'),
             ('ad', 'default_password', '', '用户默认密码'),
             ('ad', 'force_change_pwd', 'true', '是否强制改密码'),
-            ('ad', 'system_accounts', 'Administrator,guest', '系统账号列表（禁用时跳过这些账号，逗号分隔）'),
+            ('ad', 'system_accounts', 'Administrator,guest', '系统账号列表'),
             ('sync', 'sync_time', '02:00', '自动同步时间（HH:MM）'),
             ('sync', 'auto_sync', 'false', '启用自动同步'),
             ('sync', 'exclude_users', '', '排除的系统用户名（逗号分隔）'),
@@ -40,28 +41,28 @@ class ConfigManager:
                     (category, key, value, description)
                 )
     
-    def get(self, key, default=None):
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
         row = self.db.fetch_one('SELECT category, value FROM config WHERE key = ?', (key,))
         if row:
             return row['value']
         return default
     
-    def get_encrypted(self, key):
+    def get_encrypted(self, key: str) -> Optional[str]:
         return self.get(key)
     
-    def set(self, key, value):
+    def set(self, key: str, value: str) -> None:
         existing = self.db.fetch_one('SELECT category FROM config WHERE key = ?', (key,))
         category = existing['category'] if existing else 'other'
         self.set_by_category(category, key, value)
     
-    def get_all_by_category(self, category):
+    def get_all_by_category(self, category: str) -> Dict[str, Dict[str, str]]:
         rows = self.db.fetch_all('SELECT key, value, description FROM config WHERE category = ?', (category,))
         result = {}
         for row in rows:
             result[row['key']] = {'value': row['value'], 'description': row['description']}
         return result
     
-    def set_by_category(self, category, key, value, description=''):
+    def set_by_category(self, category: str, key: str, value: str, description: str = '') -> None:
         existing = self.db.fetch_one(
             'SELECT id FROM config WHERE category = ? AND key = ?',
             (category, key)
@@ -77,11 +78,11 @@ class ConfigManager:
                 (category, key, value, description)
             )
     
-    def get_wecom_config(self):
+    def get_wecom_config(self) -> Dict[str, Dict[str, str]]:
         return self.get_all_by_category('wecom')
     
-    def get_ad_config(self):
+    def get_ad_config(self) -> Dict[str, Dict[str, str]]:
         return self.get_all_by_category('ad')
     
-    def get_sync_config(self):
+    def get_sync_config(self) -> Dict[str, Dict[str, str]]:
         return self.get_all_by_category('sync')

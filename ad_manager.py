@@ -2,6 +2,8 @@ import subprocess
 import re
 import os
 import json
+import base64
+from typing import List, Dict, Optional, Tuple, Any
 import win32net
 import win32netcon
 import win32api
@@ -10,19 +12,16 @@ from database import Database
 from config_manager import ConfigManager
 
 class ADManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.db = Database()
         self.config = ConfigManager()
     
-    def _clean_name(self, name):
+    def _clean_name(self, name: str) -> str:
         cleaned = name.replace(' ', '').replace('-', '').replace('_', '')
         cleaned = ''.join(c for c in cleaned if c.isalnum())
         return cleaned[:20]
     
-    def _run_powershell(self, script):
-        import os
-        import base64
-        
+    def _run_powershell(self, script: str) -> str:
         try:
             encoded_script = base64.b64encode(script.encode('utf-16-le')).decode('utf-8')
             
@@ -76,12 +75,12 @@ class ADManager:
             self._log_command(script, -1, '', str(e))
             raise e
     
-    def _log_command(self, script, return_code, stdout, stderr):
+    def _log_command(self, script: str, return_code: int, stdout: str, stderr: str) -> None:
         stdout_text = stdout[:500] if stdout else ''
         stderr_text = stderr[:500] if stderr else ''
         self.db.log_operation('AD_COMMAND', 'PowerShell', f'Script: {script[:200]}\nReturnCode: {return_code}\nStdout: {stdout_text}\nStderr: {stderr_text}')
     
-    def test_connection(self):
+    def test_connection(self) -> bool:
         domain = self.config.get('domain')
         if not domain:
             raise Exception('AD域配置未完成')
@@ -97,7 +96,7 @@ class ADManager:
         result = self._run_powershell(script)
         return 'Success' in result
     
-    def check_ad_environment(self):
+    def check_ad_environment(self) -> Dict[str, Any]:
         domain = self.config.get('domain')
         if not domain:
             return {'success': False, 'message': 'AD域配置未完成，请先配置AD域名'}
@@ -123,7 +122,7 @@ class ADManager:
         except Exception as e:
             return {'success': False, 'message': f'AD域环境检测失败: {str(e)}'}
     
-    def create_ou(self, ou_name, parent_dn):
+    def create_ou(self, ou_name: str, parent_dn: str) -> str:
         script = f'''
             $ouPath = "OU={ou_name},{parent_dn}"
             if (-not (Get-ADOrganizationalUnit -Filter {{Name -eq "{ou_name}"}} -SearchBase "{parent_dn}" -ErrorAction SilentlyContinue)) {{
@@ -135,7 +134,7 @@ class ADManager:
         '''
         return self._run_powershell(script)
     
-    def create_security_group(self, group_name, parent_dn, member_of=None):
+    def create_security_group(self, group_name: str, parent_dn: str, member_of: Optional[str] = None) -> str:
         script = f'''
             $groupPath = "CN={group_name},{parent_dn}"
             if (-not (Get-ADGroup -Filter {{Name -eq "{group_name}"}} -SearchBase "{parent_dn}" -ErrorAction SilentlyContinue)) {{
@@ -152,7 +151,7 @@ class ADManager:
         
         return result
     
-    def add_group_to_group(self, child_group, parent_group, parent_dn):
+    def add_group_to_group(self, child_group: str, parent_group: str, parent_dn: str) -> str:
         script = f'''
             $child = Get-ADGroup -Filter {{Name -eq "{child_group}"}} -SearchBase "{parent_dn}"
             $parent = Get-ADGroup -Filter {{Name -eq "{parent_group}"}}
@@ -163,9 +162,14 @@ class ADManager:
         '''
         return self._run_powershell(script)
     
-    def create_user(self, name, sam_account_name, parent_dn, password, email=None, position=None, force_change_pwd=True):
+    def create_user(self, name: str, sam_account_name: str, parent_dn: str, password: str, 
+                   email: Optional[str] = None, position: Optional[str] = None, 
+                   force_change_pwd: bool = True) -> str:
         escaped_password = password.replace('"', '\\"')
         change_pwd_at_logon = '$true' if force_change_pwd else '$false'
+        
+        email_param = f'-EmailAddress "{email}"' if email else ''
+        display_name_param = f'-DisplayName "{name}"'
         
         script = f'''
             $password = ConvertTo-SecureString "{escaped_password}" -AsPlainText -Force
@@ -173,7 +177,7 @@ class ADManager:
             $existingUser = Get-ADUser -Filter {{SamAccountName -eq "{sam_account_name}"}} -ErrorAction SilentlyContinue
             if (-not $existingUser) {{
                 try {{
-                    New-ADUser -Name "{name}" -SamAccountName "{sam_account_name}" -UserPrincipalName "{sam_account_name}@{self.config.get("domain")}" -AccountPassword $password -Enabled $true -ChangePasswordAtLogon {change_pwd_at_logon} -Path "{parent_dn}" -ErrorAction Stop
+                    New-ADUser -Name "{name}" -SamAccountName "{sam_account_name}" -UserPrincipalName "{sam_account_name}@{self.config.get("domain")}" -AccountPassword $password -Enabled $true -ChangePasswordAtLogon {change_pwd_at_logon} -Path "{parent_dn}" {display_name_param} {email_param} -ErrorAction Stop
                     $newUser = Get-ADUser -Identity "{sam_account_name}" -ErrorAction Stop
                     Write-Output "Created at: $($newUser.DistinguishedName)"
                 }} catch {{
@@ -188,14 +192,12 @@ class ADManager:
         result = self._run_powershell(script)
         
         if 'Created' in result and 'Failed' not in result:
-            if email:
-                self.update_user_attribute(sam_account_name, 'EmailAddress', email)
             if position:
                 self.update_user_attribute(sam_account_name, 'Title', position)
         
         return result
     
-    def get_ou_dn(self, ou_name):
+    def get_ou_dn(self, ou_name: str) -> Optional[str]:
         script = f'''
             try {{
                 $ou = Get-ADOrganizationalUnit -Filter {{Name -eq "{ou_name}"}} -ErrorAction Stop
@@ -207,13 +209,14 @@ class ADManager:
         result = self._run_powershell(script).strip()
         return result if result else None
     
-    def check_ou_exists(self, ou_name):
+    def check_ou_exists(self, ou_name: str) -> Tuple[bool, Optional[str]]:
         ou_dn = self.get_ou_dn(ou_name)
         if ou_dn:
             return True, ou_dn
         return False, None
     
-    def update_user(self, sam_account_name, name=None, email=None, position=None):
+    def update_user(self, sam_account_name: str, name: Optional[str] = None, 
+                    email: Optional[str] = None, position: Optional[str] = None) -> str:
         updates = []
         if name:
             updates.append(f'-Name "{name}"')
@@ -232,7 +235,7 @@ class ADManager:
         '''
         return self._run_powershell(script)
     
-    def update_user_attribute(self, sam_account_name, attribute, value):
+    def update_user_attribute(self, sam_account_name: str, attribute: str, value: str) -> str:
         escaped_value = value.replace('"', '\\"')
         script = f'''
             Set-ADUser -Identity "{sam_account_name}" -Replace @{{{attribute}="{escaped_value}"}}
@@ -240,28 +243,28 @@ class ADManager:
         '''
         return self._run_powershell(script)
     
-    def disable_user(self, sam_account_name):
+    def disable_user(self, sam_account_name: str) -> str:
         script = f'''
             Disable-ADAccount -Identity "{sam_account_name}"
             Write-Output "Disabled"
         '''
         return self._run_powershell(script)
     
-    def move_user_to_disabled_ou(self, sam_account_name, disabled_ou_dn):
+    def move_user_to_disabled_ou(self, sam_account_name: str, disabled_ou_dn: str) -> str:
         script = f'''
             Move-ADObject -Identity (Get-ADUser "{sam_account_name}") -TargetPath "{disabled_ou_dn}"
             Write-Output "Moved"
         '''
         return self._run_powershell(script)
     
-    def add_user_to_group(self, sam_account_name, group_name):
+    def add_user_to_group(self, sam_account_name: str, group_name: str) -> str:
         script = f'''
             Add-ADGroupMember -Identity "{group_name}" -Members "{sam_account_name}"
             Write-Output "Added"
         '''
         return self._run_powershell(script)
     
-    def get_all_ad_users(self):
+    def get_all_ad_users(self) -> List[Dict[str, str]]:
         users = []
         try:
             domain = self.config.get('domain', '')
@@ -271,7 +274,6 @@ class ADManager:
             
             level = 2
             resume_handle = 0
-            total_users = 0
             
             while True:
                 try:
@@ -288,22 +290,19 @@ class ADManager:
                                 'name': full_name
                             })
                     
-                    total_users += len(user_info)
-                    
                     if resume_handle == 0:
                         break
-                except Exception as e:
+                except Exception:
                     break
             
-                self.db.log_operation('SYNC_DEBUG', 'AD_STATUS', f'使用pywin32成功获取 {len(users)} 个AD用户')
-            
+            self.db.log_operation('SYNC_DEBUG', 'AD_STATUS', f'使用pywin32成功获取 {len(users)} 个AD用户')
             return users
             
         except Exception as e:
             self.db.log_operation('SYNC_ERROR', 'AD_STATUS', f'获取AD用户失败: {str(e)}')
             return []
     
-    def get_all_ad_groups(self):
+    def get_all_ad_groups(self) -> List[Dict[str, str]]:
         script = '''
             Get-ADGroup -Filter * -Properties Name, SamAccountName | Select-Object Name, SamAccountName
         '''
@@ -332,7 +331,7 @@ class ADManager:
         self.db.log_operation('SYNC_DEBUG', 'AD_STATUS', f'安全组解析结果: {len(groups)} 个安全组')
         return groups
     
-    def get_all_ad_ous(self):
+    def get_all_ad_ous(self) -> List[Dict[str, str]]:
         script = '''
             Get-ADOrganizationalUnit -Filter * -Properties Name, DistinguishedName | Select-Object Name, DistinguishedName
         '''
