@@ -136,13 +136,20 @@ class MainWindow:
         menubar.add_cascade(label="文件", menu=file_menu)
         
         sync_menu = tk.Menu(menubar, tearoff=0)
-        sync_menu.add_command(label="同步企业微信数据", command=self._sync_wecom)
-        sync_menu.add_command(label="同步全部到AD", command=self._sync_all_to_ad)
+        sync_menu.add_command(label="企微全量同步", command=self._sync_wecom)
+        sync_menu.add_command(label="企微部门同步", command=self._sync_wecom_dept)
         sync_menu.add_command(label="AD状态同步", command=self._sync_ad_status)
+        sync_menu.add_separator()
+        sync_menu.add_command(label="AD全量同步", command=self._sync_all_to_ad)
+        sync_menu.add_command(label="选中部门同步", command=self._sync_dept_to_ad)
+        sync_menu.add_command(label="选中用户同步", command=self._sync_selected_users)
         menubar.add_cascade(label="同步", menu=sync_menu)
         
         config_menu = tk.Menu(menubar, tearoff=0)
-        config_menu.add_command(label="系统配置", command=self._show_config)
+        config_menu.add_command(label="企业微信配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 0))
+        config_menu.add_command(label="AD域配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 1))
+        config_menu.add_command(label="同步设置", command=lambda: ConfigDialog(self.root, self.config, self.db, 2))
+        config_menu.add_command(label="数据库配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 3))
         menubar.add_cascade(label="配置", menu=config_menu)
         
         log_menu = tk.Menu(menubar, tearoff=0)
@@ -750,17 +757,32 @@ class MainWindow:
     def _show_about(self):
         from auth import AuthManager
         auth_manager = AuthManager()
-        remaining_days = auth_manager.get_remaining_days()
-        authorized = auth_manager.is_authorized()
+        auth_info = auth_manager.get_auth_info()
+        serial_number = auth_manager.get_serial_number()
         
-        auth_info = "已授权" if authorized else "未授权"
-        if authorized:
-            auth_info += f"（剩余 {remaining_days} 天）"
+        if auth_info and auth_info.get('authorized'):
+            expire_time = auth_info['expire_time']
+            expire_str = expire_time.strftime('%Y-%m-%d %H:%M:%S')
+            remaining_days = auth_info['remaining_days']
+            remaining_hours = auth_info['remaining_hours']
+            
+            if remaining_days > 0:
+                remaining_str = f"剩余 {remaining_days} 天"
+            else:
+                total_hours = auth_info['remaining_total_hours']
+                remaining_str = f"剩余 {total_hours} 小时"
+            
+            auth_status = f"已授权到 {expire_str}（{remaining_str}）"
+        else:
+            auth_status = "未授权"
+        
+        serial_display = serial_number if serial_number else "无法获取"
         
         about_text = f"""企业微信-AD域同步工具
 版本: 1.0
 
-授权状态: {auth_info}
+序列号: {serial_display}
+授权状态: {auth_status}
 联系方式: 13539742634
 
 功能说明:
@@ -917,7 +939,7 @@ class MainWindow:
         tree.bind('<<TreeviewSelect>>', show_detail)
 
 class ConfigDialog:
-    def __init__(self, parent, config, db):
+    def __init__(self, parent, config, db, default_tab=0):
         self.config = config
         self.db = db
         
@@ -932,6 +954,9 @@ class ConfigDialog:
         self._create_ad_tab(notebook)
         self._create_sync_tab(notebook)
         self._create_database_tab(notebook)
+        
+        if 0 <= default_tab < 4:
+            notebook.select(default_tab)
         
         button_frame = ttk.Frame(self.dialog)
         button_frame.pack(fill=tk.X, padx=10, pady=10)

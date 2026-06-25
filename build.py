@@ -8,7 +8,6 @@ def build_main():
         '--onefile',
         '--windowed',
         '--name', 'ADSyncWeCom',
-        '--add-data', 'data;data',
         '--hidden-import', 'sync_service',
         '--hidden-import', 'ad_manager',
         '--hidden-import', 'wecom_api',
@@ -17,6 +16,8 @@ def build_main():
         '--hidden-import', 'logger',
         '--hidden-import', 'auth',
         '--hidden-import', 'gui',
+        '--hidden-import', 'hardware_info',
+        '--hidden-import', 'pysqlcipher3',
         'main.py'
     ]
     

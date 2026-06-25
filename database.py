@@ -148,10 +148,16 @@ class Database:
                 duration_days INTEGER NOT NULL,
                 auth_code TEXT NOT NULL,
                 verified INTEGER DEFAULT 1,
+                serial_number TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        try:
+            cursor.execute('ALTER TABLE auth ADD COLUMN serial_number TEXT')
+        except sqlite3.OperationalError:
+            pass
         
         self._conn.commit()
     

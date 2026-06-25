@@ -28,7 +28,7 @@ class AuthCodeGenerator:
         )
         return kdf.derive(password.encode('utf-8'))
     
-    def generate(self, duration_days, password=None):
+    def generate(self, duration_days, serial_number=None, password=None):
         if password is None:
             password = self.INTERNAL_PASSWORD
         try:
@@ -50,10 +50,15 @@ class AuthCodeGenerator:
         
         first_auth_time = current_time.isoformat()
         
-        payload = json.dumps({
+        payload_data = {
             'first_auth_time': first_auth_time,
             'duration_days': duration_days
-        }).encode('utf-8')
+        }
+        
+        if serial_number:
+            payload_data['serial_number'] = serial_number
+        
+        payload = json.dumps(payload_data).encode('utf-8')
         
         salt = bytes([int(time.time()) % 256 for _ in range(16)])
         iv = bytes([int(time.time() * 1000) % 256 for _ in range(16)])
@@ -75,37 +80,43 @@ class GUIGenerator:
     def __init__(self, root):
         self.root = root
         self.root.title("授权码生成器")
-        self.root.geometry("400x300")
+        self.root.geometry("450x350")
         
         self.generator = AuthCodeGenerator()
         
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        ttk.Label(main_frame, text="授权天数:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.duration_entry = ttk.Entry(main_frame, width=20)
-        self.duration_entry.grid(row=0, column=1, pady=5)
+        ttk.Label(main_frame, text="序列号:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.serial_entry = ttk.Entry(main_frame, width=30)
+        self.serial_entry.grid(row=0, column=1, pady=5)
+        self.serial_entry.insert(0, "")
+        
+        ttk.Label(main_frame, text="授权天数:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.duration_entry = ttk.Entry(main_frame, width=30)
+        self.duration_entry.grid(row=1, column=1, pady=5)
         self.duration_entry.insert(0, "365")
         
         generate_btn = ttk.Button(main_frame, text="生成授权码", command=self.generate)
-        generate_btn.grid(row=1, column=0, columnspan=2, pady=10)
+        generate_btn.grid(row=2, column=0, columnspan=2, pady=10)
         
-        ttk.Label(main_frame, text="授权码:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.result_text = tk.Text(main_frame, height=4, width=40)
-        self.result_text.grid(row=3, column=0, columnspan=2, pady=5)
+        ttk.Label(main_frame, text="授权码:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.result_text = tk.Text(main_frame, height=4, width=50)
+        self.result_text.grid(row=4, column=0, columnspan=2, pady=5)
         
         copy_btn = ttk.Button(main_frame, text="复制授权码", command=self.copy_to_clipboard)
-        copy_btn.grid(row=4, column=0, columnspan=2, pady=5)
+        copy_btn.grid(row=5, column=0, columnspan=2, pady=5)
         
-        ttk.Label(main_frame, text="生效时间:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="生效时间:").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.time_label = ttk.Label(main_frame, text="")
-        self.time_label.grid(row=5, column=1, pady=5)
+        self.time_label.grid(row=6, column=1, pady=5)
     
     def generate(self):
         try:
+            serial = self.serial_entry.get().strip()
             duration = int(self.duration_entry.get())
             
-            code, first_time = self.generator.generate(duration, None)
+            code, first_time = self.generator.generate(duration, serial, None)
             
             self.result_text.delete(1.0, tk.END)
             self.result_text.insert(tk.END, code)
@@ -130,19 +141,22 @@ class GUIGenerator:
 def main():
     if len(sys.argv) >= 2:
         duration = int(sys.argv[1])
-        password = sys.argv[2] if len(sys.argv) >= 3 else None
+        serial_number = sys.argv[2] if len(sys.argv) >= 3 else None
+        password = sys.argv[3] if len(sys.argv) >= 4 else None
         
         generator = AuthCodeGenerator()
-        code, first_time = generator.generate(duration, password)
+        code, first_time = generator.generate(duration, serial_number, password)
         
         print(f"授权码: {code}")
         print(f"生效时间: {first_time}")
+        if serial_number:
+            print(f"绑定序列号: {serial_number}")
     elif tk:
         root = tk.Tk()
         app = GUIGenerator(root)
         root.mainloop()
     else:
-        print("用法: python auth_generator.py <天数> [密码]")
+        print("用法: python auth_generator.py <天数> [序列号] [密码]")
         sys.exit(1)
 
 if __name__ == "__main__":

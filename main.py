@@ -2,7 +2,7 @@ import sys
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from auth import AuthManager, NetworkUnavailableError, AuthExpiredError, AuthInvalidError
+from auth import AuthManager, NetworkUnavailableError, AuthExpiredError, AuthInvalidError, SerialNumberMismatchError
 from gui import MainWindow
 
 def main():
@@ -55,14 +55,31 @@ def main():
 def show_auth_dialog(parent, auth_manager):
     dialog = tk.Toplevel(parent)
     dialog.title("授权验证")
-    dialog.geometry("400x150")
+    dialog.geometry("450x220")
     dialog.grab_set()
     
     result = [False]
     
+    serial_number = auth_manager.get_serial_number()
+    
+    ttk.Label(dialog, text="本机序列号:").pack(pady=5)
+    
+    serial_frame = ttk.Frame(dialog)
+    serial_frame.pack(pady=5)
+    
+    serial_label = ttk.Label(serial_frame, text=serial_number if serial_number else "无法获取")
+    serial_label.pack(side=tk.LEFT)
+    
+    def copy_serial():
+        if serial_number:
+            dialog.clipboard_clear()
+            dialog.clipboard_append(serial_number)
+    
+    ttk.Button(serial_frame, text="📋", command=copy_serial, width=2).pack(side=tk.LEFT)
+    
     ttk.Label(dialog, text="请输入授权码:").pack(pady=10)
     
-    code_entry = ttk.Entry(dialog, width=50)
+    code_entry = ttk.Entry(dialog, width=60)
     code_entry.pack(pady=5)
     
     def on_ok():
@@ -80,6 +97,8 @@ def show_auth_dialog(parent, auth_manager):
             messagebox.showerror("错误", "授权码无效")
         except AuthExpiredError:
             messagebox.showerror("错误", "授权码已过期")
+        except SerialNumberMismatchError:
+            messagebox.showerror("错误", "序列号不匹配，请使用正确的授权码")
         except NetworkUnavailableError:
             messagebox.showerror("错误", "网络不可达，无法验证授权码。请检查网络连接后重试。")
         except Exception as e:
