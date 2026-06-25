@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import time
+from datetime import datetime
 from database import Database
 from config_manager import ConfigManager
 from sync_service import SyncService
@@ -98,10 +99,20 @@ class MainWindow:
     def _init_scheduler(self):
         def delayed_init():
             auto_sync = self.config.get('auto_sync', 'false').lower() == 'true'
+            self.scheduler.set_on_sync_complete_callback(self._on_auto_sync_complete)
             if auto_sync:
                 self.scheduler.start()
+            self.root.after(0, self._update_next_sync_display)
+            self.root.after(0, self._schedule_next_sync_refresh)
         
         threading.Thread(target=delayed_init, daemon=True).start()
+    
+    def _on_auto_sync_complete(self):
+        self.root.after(0, self._update_stats)
+    
+    def _schedule_next_sync_refresh(self):
+        self._update_next_sync_display()
+        self.root.after(60000, self._schedule_next_sync_refresh)
     
     def _setup_styles(self):
         style = ttk.Style()
@@ -246,7 +257,9 @@ class MainWindow:
         self.auto_sync_var.set(self.config.get('auto_sync', 'false').lower() == 'true')
         self.auto_sync_checkbox = ttk.Checkbutton(toolbar_row, text="启用自动同步", variable=self.auto_sync_var, command=self._toggle_auto_sync)
         self.auto_sync_checkbox.pack(side=tk.LEFT, padx=8)
-        ttk.Label(toolbar_row, text=f"同步时间: {self.config.get('sync_time', '02:00')}", style='Status.TLabel').pack(side=tk.LEFT, padx=4)
+        
+        self.next_sync_label = ttk.Label(toolbar_row, text="", style='Status.TLabel')
+        self.next_sync_label.pack(side=tk.LEFT, padx=4)
     
     def _set_sync_buttons_enabled(self, enabled):
         state = tk.NORMAL if enabled else tk.DISABLED
@@ -275,6 +288,36 @@ class MainWindow:
         self.stats_labels['user_needsync'].config(text=str(user_needsync))
         self.stats_labels['user_disabled'].config(text=str(user_disabled))
     
+    def _update_next_sync_display(self):
+        if self.scheduler.is_running():
+            next_sync = self.scheduler._get_next_sync_time()
+            if next_sync:
+                now = datetime.now()
+                time_diff = (next_sync - now).total_seconds()
+                hours = int(time_diff // 3600)
+                minutes = int((time_diff % 3600) // 60)
+                self.next_sync_label.config(text=f"下次同步: {next_sync.strftime('%m-%d %H:%M')} ({hours}小时{minutes}分钟后)")
+            else:
+                self.next_sync_label.config(text="下次同步: 计算中...")
+        else:
+            self.next_sync_label.config(text="自动同步未启用")
+    
+    def _on_config_changed(self, old_auto_sync, old_sync_time, new_auto_sync, new_sync_time):
+        if old_sync_time != new_sync_time:
+            if hasattr(self, 'sync_time_label'):
+                self.sync_time_label.config(text=f"同步时间: {new_sync_time}")
+        
+        if old_auto_sync != new_auto_sync:
+            if hasattr(self, 'auto_sync_var'):
+                self.auto_sync_var.set(new_auto_sync)
+        
+        if self.scheduler.is_running():
+            if old_sync_time != new_sync_time:
+                self.scheduler._sync_time = new_sync_time
+                self.scheduler._calculate_next_sync_time()
+        
+        self._update_next_sync_display()
+    
     def _toggle_auto_sync(self):
         if hasattr(self, 'auto_sync_checkbox'):
             self.auto_sync_checkbox.config(state=tk.DISABLED)
@@ -289,6 +332,8 @@ class MainWindow:
             else:
                 self.scheduler.stop()
                 messagebox.showinfo("提示", "自动同步已禁用")
+            
+            self._update_next_sync_display()
         except Exception as e:
             messagebox.showerror("错误", str(e))
         finally:
@@ -940,6 +985,7 @@ class MainWindow:
 
 class ConfigDialog:
     def __init__(self, parent, config, db, default_tab=0):
+        self.parent = parent
         self.config = config
         self.db = db
         
@@ -1126,6 +1172,9 @@ class ConfigDialog:
     
     def _save(self):
         try:
+            old_auto_sync = self.config.get('auto_sync', 'false').lower() == 'true'
+            old_sync_time = self.config.get('sync_time', '02:00')
+            
             self.config.set_by_category('wecom', 'corp_id', self.corp_id_entry.get(), '企业微信CorpID')
             self.config.set_by_category('wecom', 'corp_secret', self.corp_secret_entry.get(), '企业微信Secret')
             self.config.set_by_category('wecom', 'wechat_bot_key', self.bot_key_entry.get(), 'WeChatBot密钥')
@@ -1146,6 +1195,12 @@ class ConfigDialog:
             
             self.config.set_by_category('db', 'auto_backup', str(self.auto_backup_var.get()), '自动备份')
             self.config.set_by_category('db', 'backup_days', self.backup_days_entry.get(), '备份保留天数')
+            
+            new_auto_sync = self.auto_sync_var.get()
+            new_sync_time = self.sync_time_entry.get()
+            
+            if self.parent and hasattr(self.parent, '_on_config_changed'):
+                self.parent._on_config_changed(old_auto_sync, old_sync_time, new_auto_sync, new_sync_time)
             
             messagebox.showinfo("成功", "配置保存成功")
             self.dialog.destroy()

@@ -131,3 +131,27 @@ class WeComAPI:
                 })
         
         return user_depts
+    
+    def send_bot_message(self, content: str) -> bool:
+        bot_key = self.config.get('wechat_bot_key', '')
+        if not bot_key:
+            return False
+        
+        url = f'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={bot_key}'
+        
+        try:
+            data = {
+                'msgtype': 'text',
+                'text': {
+                    'content': content
+                }
+            }
+            response = requests.post(url, json=data, timeout=30)
+            result = response.json()
+            
+            if result.get('errcode') == 0:
+                return True
+            else:
+                return False
+        except Exception:
+            return False
