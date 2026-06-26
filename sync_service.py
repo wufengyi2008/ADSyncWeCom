@@ -4,6 +4,8 @@ from database import Database
 from wecom_api import WeComAPI
 from ad_manager import ADManager
 from config_manager import ConfigManager
+from email_service import EmailService
+from password_utils import generate_secure_password, validate_password
 
 class SyncService:
     STATUS_UNSYNCED = 0
@@ -16,6 +18,22 @@ class SyncService:
         self.wecom_api = WeComAPI()
         self.ad_manager = ADManager()
         self.config = ConfigManager()
+        self.email_service = EmailService()
+    
+    def _get_user_password(self) -> str:
+        """
+        根据密码模式获取用户密码
+        - fixed: 使用固定密码
+        - random: 生成随机密码
+        """
+        password_mode = self.config.get('password_mode', 'fixed')
+        if password_mode == 'random':
+            return generate_secure_password()
+        else:
+            default_password = self.config.get('default_password', '')
+            if not validate_password(default_password):
+                raise Exception('固定密码不符合安全要求（需包含大小写字母、数字、特殊符号，至少8位）')
+            return default_password
     
     def check_ad_environment(self) -> Dict[str, Any]:
         return self.ad_manager.check_ad_environment()
@@ -314,11 +332,16 @@ class SyncService:
         
         try:
             domain = self.config.get('domain')
-            default_password = self.config.get('default_password')
             force_change_pwd = self.config.get('force_change_pwd', 'true').lower() == 'true'
+            password_mode = self.config.get('password_mode', 'fixed')
             
-            if not domain or not default_password:
-                raise Exception('AD配置未完成')
+            if not domain:
+                raise Exception('AD域名未配置')
+            
+            if password_mode == 'fixed':
+                default_password = self.config.get('default_password', '')
+                if not default_password:
+                    raise Exception('AD配置未完成：固定密码未设置')
             
             base_dn = f"DC={domain.replace('.', ',DC=')}"
             
@@ -435,11 +458,13 @@ class SyncService:
                             
                             email = user['email'] if user['email'] else f"{user['account']}@{self.config.get('email_domain', '')}"
                             
+                            user_password = self._get_user_password()
+                            
                             result = self.ad_manager.create_user(
                                 user['name'],
                                 sam_account_name,
                                 dept_dn,
-                                default_password,
+                                user_password,
                                 email,
                                 user['position'],
                                 force_change_pwd
@@ -452,6 +477,17 @@ class SyncService:
                                     (self.STATUS_SYNCED, user['wecom_id'])
                                 )
                                 sync_count += 1
+                                
+                                if self.config.is_email_configured():
+                                    try:
+                                        self.email_service.send_account_notification(
+                                            email,
+                                            sam_account_name,
+                                            user_password,
+                                            domain
+                                        )
+                                    except Exception as e:
+                                        self.db.log_operation('EMAIL_ERROR', 'SYNC', f'发送邮件通知失败: {user["name"]}, 错误: {str(e)}')
                             elif 'Exists' in result:
                                 self.ad_manager.update_user(sam_account_name, user['name'], email, user['position'])
                                 self.db.execute(
@@ -638,8 +674,13 @@ class SyncService:
             
             domain = self.config.get('domain')
             base_dn = f"DC={domain.replace('.', ',DC=')}"
-            default_password = self.config.get('default_password')
             force_change_pwd = self.config.get('force_change_pwd', 'true').lower() == 'true'
+            password_mode = self.config.get('password_mode', 'fixed')
+            
+            if password_mode == 'fixed':
+                default_password = self.config.get('default_password', '')
+                if not default_password:
+                    raise Exception('AD配置未完成：固定密码未设置')
             
             parent_dn = base_dn
             if dept['parent_wecom_id']:
@@ -673,11 +714,13 @@ class SyncService:
                 try:
                     self.db.log_operation('SYNC_DEBUG', 'DEPT_USERS', f'创建AD用户: {user["name"]}, SAM={sam_account_name}, DN={dept_dn}')
                     
+                    user_password = self._get_user_password()
+                    
                     result = self.ad_manager.create_user(
                         user['name'],
                         sam_account_name,
                         dept_dn,
-                        default_password,
+                        user_password,
                         email,
                         user['position'],
                         force_change_pwd
@@ -688,6 +731,17 @@ class SyncService:
                     if 'Created' in result:
                         self.db.log_operation('SYNC_DEBUG', 'DEPT_USERS', f'用户 {sam_account_name} 已添加到组 {group_name}')
                         self.ad_manager.add_user_to_group(sam_account_name, group_name)
+                        
+                        if self.config.is_email_configured():
+                            try:
+                                self.email_service.send_account_notification(
+                                    email,
+                                    sam_account_name,
+                                    user_password,
+                                    domain
+                                )
+                            except Exception as e:
+                                self.db.log_operation('EMAIL_ERROR', 'DEPT_USERS', f'发送邮件通知失败: {user["name"]}, 错误: {str(e)}')
                     
                     self.db.execute(
                         'UPDATE users SET sync_status = ?, sync_time = CURRENT_TIMESTAMP WHERE wecom_id = ?',
@@ -727,8 +781,13 @@ class SyncService:
         error_count = 0
         
         try:
-            default_password = self.config.get('default_password')
             force_change_pwd = self.config.get('force_change_pwd', 'true').lower() == 'true'
+            password_mode = self.config.get('password_mode', 'fixed')
+            
+            if password_mode == 'fixed':
+                default_password = self.config.get('default_password', '')
+                if not default_password:
+                    raise Exception('AD配置未完成：固定密码未设置')
             
             self.db.log_operation('SYNC_DEBUG', 'SELECTED_USERS', f'准备同步 {len(user_wecom_ids)} 个用户')
             
@@ -768,11 +827,13 @@ class SyncService:
                 email = user['email'] if user['email'] else f"{user['account']}@{self.config.get('email_domain', '')}"
                 
                 try:
+                    user_password = self._get_user_password()
+                    
                     result = self.ad_manager.create_user(
                         user['name'],
                         sam_account_name,
                         dept_dn,
-                        default_password,
+                        user_password,
                         email,
                         user['position'],
                         force_change_pwd
@@ -784,6 +845,17 @@ class SyncService:
                         group_name = self.ad_manager._clean_name(dept['name'])
                         self.ad_manager.add_user_to_group(sam_account_name, group_name)
                         self.db.log_operation('SYNC_DEBUG', 'SELECTED_USERS', f'用户 {sam_account_name} 已添加到组 {group_name}')
+                        
+                        if self.config.is_email_configured():
+                            try:
+                                self.email_service.send_account_notification(
+                                    email,
+                                    sam_account_name,
+                                    user_password,
+                                    self.config.get('domain', '')
+                                )
+                            except Exception as e:
+                                self.db.log_operation('EMAIL_ERROR', 'SELECTED_USERS', f'发送邮件通知失败: {user["name"]}, 错误: {str(e)}')
                     
                     self.db.execute(
                         'UPDATE users SET sync_status = ?, sync_time = CURRENT_TIMESTAMP WHERE wecom_id = ?',

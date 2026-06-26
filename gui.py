@@ -160,7 +160,8 @@ class MainWindow:
         config_menu.add_command(label="企业微信配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 0))
         config_menu.add_command(label="AD域配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 1))
         config_menu.add_command(label="同步设置", command=lambda: ConfigDialog(self.root, self.config, self.db, 2))
-        config_menu.add_command(label="数据库配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 3))
+        config_menu.add_command(label="邮箱通知配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 3))
+        config_menu.add_command(label="数据库配置", command=lambda: ConfigDialog(self.root, self.config, self.db, 4))
         menubar.add_cascade(label="配置", menu=config_menu)
         
         log_menu = tk.Menu(menubar, tearoff=0)
@@ -991,7 +992,7 @@ class ConfigDialog:
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("系统配置")
-        self.dialog.geometry("700x600")
+        self.dialog.geometry("750x650")
         
         notebook = ttk.Notebook(self.dialog)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -999,9 +1000,10 @@ class ConfigDialog:
         self._create_wecom_tab(notebook)
         self._create_ad_tab(notebook)
         self._create_sync_tab(notebook)
+        self._create_email_tab(notebook)
         self._create_database_tab(notebook)
         
-        if 0 <= default_tab < 4:
+        if 0 <= default_tab < 5:
             notebook.select(default_tab)
         
         button_frame = ttk.Frame(self.dialog)
@@ -1038,15 +1040,42 @@ class ConfigDialog:
         self.domain_entry.grid(row=0, column=1, padx=5, pady=5)
         self.domain_entry.insert(0, self.config.get('domain', ''))
         
-        ttk.Label(frame, text="默认密码:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(frame, text="密码模式:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.password_mode_var = tk.StringVar(value=self.config.get('password_mode', 'fixed'))
+        password_mode_frame = ttk.Frame(frame)
+        password_mode_frame.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        ttk.Radiobutton(password_mode_frame, text="固定密码", variable=self.password_mode_var, value="fixed", command=self._on_password_mode_change).pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(password_mode_frame, text="随机密码", variable=self.password_mode_var, value="random", command=self._on_password_mode_change).pack(side=tk.LEFT, padx=5)
+        
+        self.password_label = ttk.Label(frame, text="默认密码:")
+        self.password_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        
         self.password_entry = ttk.Entry(frame, width=50)
-        self.password_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.password_entry.grid(row=2, column=1, padx=5, pady=5)
         self.password_entry.insert(0, self.config.get('default_password', ''))
         
-        ttk.Label(frame, text="强制改密码:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.password_hint_label = ttk.Label(frame, text="（需包含大小写字母、数字、特殊符号，至少8位）")
+        self.password_hint_label.grid(row=3, column=1, padx=5, pady=2, sticky=tk.W)
+        
+        ttk.Label(frame, text="强制改密码:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
         self.force_change_var = tk.BooleanVar()
         self.force_change_var.set(self.config.get('force_change_pwd', 'true').lower() == 'true')
-        ttk.Checkbutton(frame, variable=self.force_change_var).grid(row=2, column=1, padx=5, pady=5)
+        ttk.Checkbutton(frame, variable=self.force_change_var).grid(row=4, column=1, padx=5, pady=5)
+        
+        self._on_password_mode_change()
+    
+    def _on_password_mode_change(self):
+        if self.password_mode_var.get() == 'fixed':
+            self.password_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+            self.password_entry.grid(row=2, column=1, padx=5, pady=5)
+            self.password_entry.config(state=tk.NORMAL)
+            self.password_hint_label.grid(row=3, column=1, padx=5, pady=2, sticky=tk.W)
+        else:
+            self.password_label.grid_remove()
+            self.password_entry.grid_remove()
+            self.password_hint_label.config(text="（系统将为每个用户自动生成12位安全密码）")
+            self.password_hint_label.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
     
     def _create_sync_tab(self, notebook):
         frame = ttk.Frame(notebook)
@@ -1170,6 +1199,83 @@ class ConfigDialog:
         self.backup_days_entry.grid(row=2, column=1, padx=5, pady=5)
         self.backup_days_entry.insert(0, self.config.get('backup_days', '7'))
     
+    def _create_email_tab(self, notebook):
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text="邮箱通知")
+        
+        ttk.Label(frame, text="邮件服务器地址:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.smtp_server_entry = ttk.Entry(frame, width=50)
+        self.smtp_server_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.smtp_server_entry.insert(0, self.config.get('smtp_server', ''))
+        
+        ttk.Label(frame, text="邮件服务器端口:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.smtp_port_entry = ttk.Entry(frame, width=10)
+        self.smtp_port_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.smtp_port_entry.insert(0, self.config.get('smtp_port', '587'))
+        
+        ttk.Label(frame, text="邮件服务器账号:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.smtp_user_entry = ttk.Entry(frame, width=50)
+        self.smtp_user_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.smtp_user_entry.insert(0, self.config.get('smtp_user', ''))
+        
+        ttk.Label(frame, text="邮件服务器密码:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        self.smtp_password_entry = ttk.Entry(frame, width=50, show='*')
+        self.smtp_password_entry.grid(row=3, column=1, padx=5, pady=5)
+        self.smtp_password_entry.insert(0, self.config.get('smtp_password', ''))
+        
+        ttk.Label(frame, text="发件人邮箱地址:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+        self.sender_email_entry = ttk.Entry(frame, width=50)
+        self.sender_email_entry.grid(row=4, column=1, padx=5, pady=5)
+        self.sender_email_entry.insert(0, self.config.get('sender_email', ''))
+        
+        ttk.Label(frame, text="邮件主题:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.email_subject_entry = ttk.Entry(frame, width=50)
+        self.email_subject_entry.grid(row=5, column=1, padx=5, pady=5)
+        self.email_subject_entry.insert(0, self.config.get('email_subject', 'AD域账号开通通知'))
+        
+        ttk.Label(frame, text="使用SSL连接:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
+        self.use_ssl_var = tk.BooleanVar()
+        self.use_ssl_var.set(self.config.get('use_ssl', 'true').lower() == 'true')
+        ttk.Checkbutton(frame, variable=self.use_ssl_var).grid(row=6, column=1, padx=5, pady=5, sticky=tk.W)
+        
+        self.test_email_btn = ttk.Button(frame, text="测试连接", command=self._test_email_connection)
+        self.test_email_btn.grid(row=7, column=1, padx=5, pady=10, sticky=tk.W)
+    
+    def _test_email_connection(self):
+        self.test_email_btn.config(state=tk.DISABLED)
+        self.test_email_btn.config(text="测试中...")
+        
+        def test_thread():
+            try:
+                from email_service import EmailService
+                
+                self.config.set_by_category('email', 'smtp_server', self.smtp_server_entry.get(), '邮件服务器地址')
+                self.config.set_by_category('email', 'smtp_port', self.smtp_port_entry.get(), '邮件服务器端口')
+                self.config.set_by_category('email', 'smtp_user', self.smtp_user_entry.get(), '邮件服务器账号')
+                self.config.set_by_category('email', 'smtp_password', self.smtp_password_entry.get(), '邮件服务器密码')
+                self.config.set_by_category('email', 'use_ssl', str(self.use_ssl_var.get()), '使用SSL连接')
+                
+                email_service = EmailService()
+                result = email_service.test_connection(timeout=10)
+                
+                def show_result():
+                    if result:
+                        messagebox.showinfo("成功", "邮件服务器连接测试成功")
+                    else:
+                        messagebox.showerror("失败", "邮件服务器连接测试失败，请检查配置")
+                    self.test_email_btn.config(state=tk.NORMAL)
+                    self.test_email_btn.config(text="测试连接")
+                
+                self.dialog.after(0, show_result)
+            except Exception as e:
+                def show_error():
+                    messagebox.showerror("错误", f"测试连接失败: {str(e)}")
+                    self.test_email_btn.config(state=tk.NORMAL)
+                    self.test_email_btn.config(text="测试连接")
+                self.dialog.after(0, show_error)
+        
+        threading.Thread(target=test_thread, daemon=True).start()
+    
     def _save(self):
         try:
             old_auto_sync = self.config.get('auto_sync', 'false').lower() == 'true'
@@ -1180,7 +1286,16 @@ class ConfigDialog:
             self.config.set_by_category('wecom', 'wechat_bot_key', self.bot_key_entry.get(), 'WeChatBot密钥')
             
             self.config.set_by_category('ad', 'domain', self.domain_entry.get(), 'AD域名')
-            self.config.set_by_category('ad', 'default_password', self.password_entry.get(), '用户默认密码')
+            self.config.set_by_category('ad', 'password_mode', self.password_mode_var.get(), '密码模式')
+            
+            if self.password_mode_var.get() == 'fixed':
+                fixed_password = self.password_entry.get()
+                from password_utils import validate_password
+                if not validate_password(fixed_password):
+                    messagebox.showerror("错误", "固定密码不符合安全要求\n需包含大小写字母、数字、特殊符号，至少8位")
+                    return
+                self.config.set_by_category('ad', 'default_password', fixed_password, '用户默认密码')
+            
             self.config.set_by_category('ad', 'force_change_pwd', str(self.force_change_var.get()), '是否强制改密码')
             
             self.config.set_by_category('sync', 'sync_time', self.sync_time_entry.get(), '自动同步时间')
@@ -1195,6 +1310,14 @@ class ConfigDialog:
             
             self.config.set_by_category('db', 'auto_backup', str(self.auto_backup_var.get()), '自动备份')
             self.config.set_by_category('db', 'backup_days', self.backup_days_entry.get(), '备份保留天数')
+            
+            self.config.set_by_category('email', 'smtp_server', self.smtp_server_entry.get(), '邮件服务器地址')
+            self.config.set_by_category('email', 'smtp_port', self.smtp_port_entry.get(), '邮件服务器端口')
+            self.config.set_by_category('email', 'smtp_user', self.smtp_user_entry.get(), '邮件服务器账号')
+            self.config.set_by_category('email', 'smtp_password', self.smtp_password_entry.get(), '邮件服务器密码')
+            self.config.set_by_category('email', 'sender_email', self.sender_email_entry.get(), '发件人邮箱地址')
+            self.config.set_by_category('email', 'email_subject', self.email_subject_entry.get(), '邮件主题')
+            self.config.set_by_category('email', 'use_ssl', str(self.use_ssl_var.get()), '使用SSL连接')
             
             new_auto_sync = self.auto_sync_var.get()
             new_sync_time = self.sync_time_entry.get()

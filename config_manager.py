@@ -17,6 +17,7 @@ class ConfigManager:
             ('wecom', 'corp_secret', '', '企业微信Secret'),
             ('wecom', 'wechat_bot_key', '', 'WeChatBot密钥'),
             ('ad', 'domain', '', 'AD域名'),
+            ('ad', 'password_mode', 'fixed', '密码模式(fixed/random)'),
             ('ad', 'default_password', '', '用户默认密码'),
             ('ad', 'force_change_pwd', 'true', '是否强制改密码'),
             ('ad', 'system_accounts', 'Administrator,guest', '系统账号列表'),
@@ -28,6 +29,13 @@ class ConfigManager:
             ('db', 'auto_backup', 'true', '自动备份'),
             ('db', 'backup_days', '7', '备份保留天数'),
             ('other', 'email_domain', '', '邮箱域名'),
+            ('email', 'smtp_server', '', '邮件服务器地址'),
+            ('email', 'smtp_port', '465', '邮件服务器端口'),
+            ('email', 'smtp_user', '', '邮件服务器账号'),
+            ('email', 'smtp_password', '', '邮件服务器密码'),
+            ('email', 'sender_email', '', '发件人邮箱地址'),
+            ('email', 'email_subject', 'AD域账号开通通知', '邮件主题'),
+            ('email', 'use_ssl', 'true', '使用SSL连接'),
         ]
         
         for category, key, value, description in defaults:
@@ -86,3 +94,13 @@ class ConfigManager:
     
     def get_sync_config(self) -> Dict[str, Dict[str, str]]:
         return self.get_all_by_category('sync')
+    
+    def get_email_config(self) -> Dict[str, Dict[str, str]]:
+        return self.get_all_by_category('email')
+    
+    def is_email_configured(self) -> bool:
+        smtp_server = self.get('smtp_server', '')
+        smtp_user = self.get('smtp_user', '')
+        smtp_password = self.get('smtp_password', '')
+        sender_email = self.get('sender_email', '')
+        return bool(smtp_server and smtp_user and smtp_password and sender_email)

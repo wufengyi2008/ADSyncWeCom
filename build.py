@@ -17,6 +17,8 @@ def build_main():
         '--hidden-import', 'auth',
         '--hidden-import', 'gui',
         '--hidden-import', 'hardware_info',
+        '--hidden-import', 'email_service',
+        '--hidden-import', 'password_utils',
         '--hidden-import', 'pysqlcipher3',
         'main.py'
     ]
